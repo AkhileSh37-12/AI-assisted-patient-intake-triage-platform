@@ -25,6 +25,7 @@ from app.models.rag_knowledge_base import RAGKnowledgeBase
 from app.routes.rag_knowledge_base_routes import router as rag_knowledge_base_router
 from app.models.rag_retrieval_log import RAGRetrievalLog
 from app.routes.rag_retrieval_log_routes import router as rag_retrieval_log_router
+from app.routes.intake_ai_routes import router as intake_ai_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -42,6 +43,7 @@ app.include_router(ai_processing_log_router)
 app.include_router(activity_log_router)
 app.include_router(rag_knowledge_base_router)
 app.include_router(rag_retrieval_log_router)
+app.include_router(intake_ai_router)
 
 @app.get("/")
 def root():

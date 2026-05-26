@@ -10,8 +10,23 @@ def create_patient_service(
 ):
 
     new_patient = Patient(
-        **patient.model_dump()
+
+    full_name=patient.get(
+        "full_name"
+    ),
+
+    age=patient.get(
+        "age"
+    ),
+
+    gender=patient.get(
+        "gender"
+    ),
+
+    phone_number=patient.get(
+        "phone_number"
     )
+)
 
     db.add(new_patient)
 
