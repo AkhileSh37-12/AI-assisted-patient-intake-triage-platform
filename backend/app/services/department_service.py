@@ -86,3 +86,25 @@ def delete_department(
     return {
         "message": "Department deleted successfully"
     }
+    
+def get_department_by_name(
+    db: Session,
+    department_name: str
+):
+
+    department = (
+        db.query(Department)
+        .filter(
+            Department.department_name == department_name
+        )
+        .first()
+    )
+
+    if not department:
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"Department '{department_name}' not found"
+        )
+
+    return department

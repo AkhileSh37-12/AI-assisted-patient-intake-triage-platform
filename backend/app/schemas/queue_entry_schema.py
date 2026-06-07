@@ -7,21 +7,21 @@ class QueueEntryBase(BaseModel):
     intake_id: int
     queue_date: date
     queue_number: int
-    priority_level: str
+    priority_score: int
     assigned_doctor_id: int | None = None
     queue_position: int
     queue_status: str
     department_id: int
 
-    @field_validator("priority_level")
+    @field_validator("priority_score")
     @classmethod
     def validate_priority(cls, value):
 
-        allowed = ["Normal", "Urgent", "Critical"]
+        allowed = [1, 2, 3, 4]
 
         if value not in allowed:
             raise ValueError(
-                f"Priority must be one of: {allowed}"
+                f"Priority score must be one of: {allowed}"
             )
 
         return value

@@ -30,7 +30,7 @@ class QueueEntry(Base):
 
     queue_number = Column(Integer, nullable=False)
 
-    priority_level = Column(String(20), nullable=False)
+    priority_score = Column(Integer, nullable=False)
 
     assigned_doctor_id = Column(
         Integer,

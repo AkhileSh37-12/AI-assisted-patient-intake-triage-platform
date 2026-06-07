@@ -13,7 +13,10 @@ from app.services.queue_entry_service import (
     get_all_queue_entries_service,
     get_queue_entry_by_id_service,
     update_queue_entry_service,
-    delete_queue_entry_service
+    delete_queue_entry_service,
+    call_patient,
+    start_consultation,
+    complete_consultation
 )
 
 router = APIRouter(
@@ -102,3 +105,60 @@ def delete_queue_entry(
     return {
         "message": "Queue entry deleted successfully"
     }
+
+
+@router.post(
+    "/queue-entries/{queue_id}/call"
+)
+def call_patient_endpoint(
+    queue_id: int,
+    db: Session = Depends(get_db)
+):
+
+    data = call_patient(
+        db,
+        queue_id
+    )
+
+    return {
+        "message": "Patient called successfully",
+        "data": data
+    }
+
+
+@router.post(
+    "/queue-entries/{queue_id}/start"
+)
+def start_consultation_endpoint(
+    queue_id: int,
+    db: Session = Depends(get_db)
+):
+
+    data = start_consultation(
+        db,
+        queue_id
+    )
+
+    return {
+        "message": "Consultation started successfully",
+        "data": data
+    }
+    
+@router.post(
+    "/queue-entries/{queue_id}/complete"
+)
+def complete_consultation_endpoint(
+    queue_id: int,
+    db: Session = Depends(get_db)
+):
+
+    data = complete_consultation(
+        db,
+        queue_id
+    )
+
+    return {
+        "message": "Consultation completed successfully",
+        "data": data
+    }
+    

@@ -16,6 +16,22 @@ def create_consultation(
     consultation
 ):
 
+    existing_consultation = (
+        db.query(Consultation)
+        .filter(
+            Consultation.intake_id ==
+            consultation.intake_id
+        )
+        .first()
+    )
+
+    if existing_consultation:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Consultation already exists for this intake"
+        )
+
     new_consultation = Consultation(
         **consultation.model_dump()
     )

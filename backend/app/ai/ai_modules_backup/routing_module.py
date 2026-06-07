@@ -12,9 +12,6 @@ from app.ai.utils.retry_handler import (
     RetryHandler
 )
 
-from app.ai.tools.department_validation_tool import (
-    DepartmentValidationTool
-)
 
 class RoutingModule:
 
@@ -49,17 +46,5 @@ class RoutingModule:
         department = parsed_response.get(
             "suggested_department"
         )
-
-        is_valid = (
-            DepartmentValidationTool.validate(
-                department
-            )
-        )
-
-        if not is_valid:
-
-            parsed_response[
-                "suggested_department"
-            ] = "General Medicine"
 
         return parsed_response

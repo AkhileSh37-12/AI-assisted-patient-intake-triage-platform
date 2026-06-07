@@ -10,6 +10,7 @@ from sqlalchemy.sql import func
 
 from app.db.database import Base
 
+from pgvector.sqlalchemy import Vector
 
 class RAGKnowledgeBase(Base):
 
@@ -53,6 +54,11 @@ class RAGKnowledgeBase(Base):
 
     chunk_index = Column(
         Integer,
+        nullable=True
+    )
+    
+    embedding = Column(
+        Vector(384),
         nullable=True
     )
 

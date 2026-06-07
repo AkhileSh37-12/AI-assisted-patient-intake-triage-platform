@@ -34,10 +34,7 @@ def create_patient_service(
 
     db.refresh(new_patient)
 
-    return {
-        "message": "Patient created successfully",
-        "patient_data": new_patient
-    }
+    return new_patient
 
 
 def get_patients_service(
@@ -101,3 +98,35 @@ def delete_patient_service(
     return {
         "message": "Patient deleted successfully"
     }
+    
+def get_or_create_patient_service(
+    db: Session,
+    patient_data
+):
+    """
+    Reuse an existing patient if the phone
+    number already exists, otherwise create
+    a new patient.
+    """
+
+    phone_number = patient_data.get(
+        "phone_number"
+    )
+
+    if phone_number:
+
+        existing_patient = (
+            db.query(Patient)
+            .filter(
+                Patient.phone_number == phone_number
+            )
+            .first()
+        )
+
+        if existing_patient:
+            return existing_patient
+
+    return create_patient_service(
+        db,
+        patient_data
+    )

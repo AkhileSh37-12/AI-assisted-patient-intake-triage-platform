@@ -14,9 +14,10 @@ ALLOWED_INPUT_TYPES = [
 ]
 
 ALLOWED_URGENCY_LEVELS = [
-    "Normal",
-    "Urgent",
-    "Critical"
+    "Emergency",
+    "High",
+    "Medium",
+    "Low"
 ]
 
 ALLOWED_STATUS = [

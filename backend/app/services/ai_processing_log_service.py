@@ -97,3 +97,40 @@ def delete_ai_processing_log(
         "message":
         "AI processing log deleted successfully"
     }
+
+from app.schemas.ai_processing_log_schema import (
+    AIProcessingLogCreate
+)
+
+
+def log_ai_processing(
+    db: Session,
+    intake_id: int,
+    ai_model_name: str,
+    processing_stage: str,
+    input_data: str,
+    output_data: str,
+    confidence_score: float | None = None
+):
+
+    log = AIProcessingLogCreate(
+
+        intake_id=intake_id,
+
+        ai_model_name=ai_model_name,
+
+        processing_stage=processing_stage,
+
+        input_data=input_data,
+
+        output_data=output_data,
+
+        confidence_score=confidence_score,
+
+        processing_status="Success"
+    )
+
+    create_ai_processing_log(
+        db,
+        log
+    )
