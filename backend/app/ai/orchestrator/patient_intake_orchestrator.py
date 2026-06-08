@@ -63,6 +63,10 @@ from app.ai.rag.retrieval_service import (
     retrieve_relevant_chunks
 )
 
+from app.models.rag_retrieval_log import (
+    RAGRetrievalLog
+)
+
 class PatientIntakeOrchestrator:
 
     async def process_patient_intake(
@@ -219,6 +223,26 @@ class PatientIntakeOrchestrator:
             db,
             intake_record
         )
+        
+        for rank, chunk in enumerate(
+            rag_chunks,
+            start=1
+        ):
+
+            retrieval_log = RAGRetrievalLog(
+
+                intake_id=saved_intake.intake_id,
+
+                knowledge_id=chunk.knowledge_id,
+
+                retrieval_rank=rank,
+
+                similarity_score=None
+            )
+
+            db.add(retrieval_log)
+
+        db.commit()
         
         log_activity(
 

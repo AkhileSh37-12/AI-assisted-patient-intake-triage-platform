@@ -13,9 +13,25 @@ def get_rag_knowledge_base_entries(
     db: Session
 ):
 
-    return db.query(
+    entries = db.query(
         RAGKnowledgeBase
     ).all()
+
+    return [
+        {
+            "knowledge_id": entry.knowledge_id,
+            "title": entry.title,
+            "category": entry.category,
+            "source": entry.source,
+            "content": entry.content,
+            "medical_specialty": entry.medical_specialty,
+            "keywords": entry.keywords,
+            "chunk_index": entry.chunk_index,
+            "created_at": entry.created_at,
+            "updated_at": entry.updated_at
+        }
+        for entry in entries
+    ]
 
 
 def create_rag_knowledge_base_entry(
