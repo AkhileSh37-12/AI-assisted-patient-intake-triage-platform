@@ -59,6 +59,10 @@ from app.services.activity_log_service import (
     log_activity
 )
 
+from app.ai.rag.retrieval_service import (
+    retrieve_relevant_chunks
+)
+
 class PatientIntakeOrchestrator:
 
     async def process_patient_intake(
@@ -89,6 +93,25 @@ class PatientIntakeOrchestrator:
             "symptoms",
             ""
         )
+        
+        rag_chunks = retrieve_relevant_chunks(
+            db=db,
+            query=symptoms,
+            top_k=3
+        )
+
+        rag_context = "\n\n".join(
+
+            [
+                f"""
+                Title: {chunk.title}
+
+                Content: {chunk.content}
+                """
+
+                for chunk in rag_chunks
+            ]
+        )
 
         # STEP 3 — Parallel Agent Execution
 
@@ -97,6 +120,10 @@ class PatientIntakeOrchestrator:
             f"""
             Patient symptoms:
             {symptoms}
+
+            Relevant medical knowledge:
+
+            {rag_context}
             """
         )
 
@@ -105,6 +132,10 @@ class PatientIntakeOrchestrator:
             f"""
             Patient symptoms:
             {symptoms}
+
+            Relevant medical knowledge:
+
+            {rag_context}
             """
         )
 
@@ -305,13 +336,16 @@ class PatientIntakeOrchestrator:
         # STEP 8 — Final Response
 
         return {
-
             "intake": intake_result,
-
             "triage": triage_result,
-
             "routing": routing_result,
-
+            "rag_context": [
+                {
+                    "title": chunk.title,
+                    "specialty": chunk.medical_specialty
+                }
+                for chunk in rag_chunks
+            ],
             "queue": {
                 "priority_score": priority_score
             }

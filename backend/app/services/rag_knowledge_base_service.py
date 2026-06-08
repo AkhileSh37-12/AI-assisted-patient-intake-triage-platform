@@ -5,6 +5,9 @@ from app.models.rag_knowledge_base import (
     RAGKnowledgeBase
 )
 
+from app.ai.rag.embedding_service import (
+    generate_embedding
+)
 
 def get_rag_knowledge_base_entries(
     db: Session
@@ -20,8 +23,37 @@ def create_rag_knowledge_base_entry(
     knowledge
 ):
 
+    embedding_text = f"""
+    {knowledge.title}
+
+    {knowledge.content}
+
+    {knowledge.keywords or ""}
+    """
+
+    embedding = generate_embedding(
+        embedding_text
+    )
+
     new_knowledge = RAGKnowledgeBase(
-        **knowledge.model_dump()
+
+        title=knowledge.title,
+
+        category=knowledge.category,
+
+        source=knowledge.source,
+
+        content=knowledge.content,
+
+        medical_specialty=
+        knowledge.medical_specialty,
+
+        keywords=knowledge.keywords,
+
+        chunk_index=
+        knowledge.chunk_index,
+
+        embedding=embedding
     )
 
     db.add(new_knowledge)
@@ -33,7 +65,8 @@ def create_rag_knowledge_base_entry(
     return {
         "message":
         "RAG knowledge base entry created successfully",
-        "knowledge_data": new_knowledge
+        "knowledge_id":
+        new_knowledge.knowledge_id
     }
 
 
@@ -59,7 +92,19 @@ def update_rag_knowledge_base_entry(
     for key, value in updated_knowledge.model_dump().items():
 
         setattr(knowledge, key, value)
+    
+    embedding_text = f"""
+    {knowledge.title}
 
+    {knowledge.content}
+
+    {knowledge.keywords or ""}
+    """
+
+    knowledge.embedding = generate_embedding(
+        embedding_text
+    )
+    
     db.commit()
 
     db.refresh(knowledge)
@@ -67,7 +112,9 @@ def update_rag_knowledge_base_entry(
     return {
         "message":
         "RAG knowledge base entry updated successfully",
-        "knowledge_data": knowledge
+
+        "knowledge_id":
+        knowledge.knowledge_id
     }
 
 
