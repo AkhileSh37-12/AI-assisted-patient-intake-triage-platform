@@ -125,3 +125,46 @@ def delete_patient_intake(
         raise Exception(
             f"Database error: {str(e)}"
         )
+        
+def verify_patient_intake(
+    db: Session,
+    intake_id: int,
+    verified_by_user_id: int,
+    final_urgency_level: str,
+    final_department_id: int,
+    staff_notes: str | None = None
+):
+
+    intake = get_patient_intake_by_id(
+        db,
+        intake_id
+    )
+
+    if not intake:
+        return None
+
+    intake.staff_verified = True
+
+    intake.verified_by_user_id = (
+        verified_by_user_id
+    )
+
+    intake.final_urgency_level = (
+        final_urgency_level
+    )
+
+    intake.final_department_id = (
+        final_department_id
+    )
+
+    intake.staff_notes = (
+        staff_notes
+    )
+
+    intake.status = "Verified"
+
+    db.commit()
+
+    db.refresh(intake)
+
+    return intake

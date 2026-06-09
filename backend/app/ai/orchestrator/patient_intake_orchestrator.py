@@ -67,6 +67,10 @@ from app.models.rag_retrieval_log import (
     RAGRetrievalLog
 )
 
+from app.telemetry.tracing import tracer
+
+from app.models.user import User
+ 
 class PatientIntakeOrchestrator:
 
     async def process_patient_intake(
@@ -77,45 +81,146 @@ class PatientIntakeOrchestrator:
 
         # STEP 1 — Intake Agent
 
-        intake_response = await asyncio.to_thread(
-            intake_agent.run,
-            patient_input
-        )
+        with tracer.start_as_current_span(
+            "intake_agent"
+        ) as span:
 
-        intake_result = json.loads(
-            intake_response.content
-        )
+            span.add_event(
+                "Patient intake started"
+            )
+
+            intake_response = await asyncio.to_thread(
+                intake_agent.run,
+                patient_input
+            )
+
+            intake_result = json.loads(
+                intake_response.content
+            )
+
+            span.set_attribute(
+                "patient.name",
+                str(
+                    intake_result.get(
+                        "full_name",
+                        ""
+                    )
+                )
+            )
+
+            span.set_attribute(
+                "patient.age",
+                int(
+                    intake_result.get(
+                        "age",
+                        0
+                    )
+                )
+            )
+
+            span.set_attribute(
+                "patient.phone",
+                str(
+                    intake_result.get(
+                        "phone_number",
+                        ""
+                    )
+                )
+            )
+
+            span.set_attribute(
+                "patient.symptoms",
+                str(
+                    intake_result.get(
+                        "symptoms",
+                        ""
+                    )
+                )
+            )
+
+            span.add_event(
+                "Patient intake completed"
+            )
 
         # STEP 2 — Create Patient
 
-        patient = get_or_create_patient_service(
-            db,
-            intake_result
-        )
+        with tracer.start_as_current_span(
+            "patient_creation"
+        ) as span:
 
-        symptoms = intake_result.get(
-            "symptoms",
-            ""
-        )
+            patient = get_or_create_patient_service(
+                db,
+                intake_result
+            )
+            
+            symptoms = intake_result.get(
+                        "symptoms",
+                        ""
+                    )
+            
+            span.set_attribute(
+                "patient.id",
+                patient.patient_id
+            )
+
+            span.add_event(
+                "Patient record created"
+            )
+
         
-        rag_chunks = retrieve_relevant_chunks(
-            db=db,
-            query=symptoms,
-            top_k=3
-        )
+        with tracer.start_as_current_span(
+            "rag_retrieval"
+        ) as span:
 
-        rag_context = "\n\n".join(
+            span.set_attribute(
+                "symptoms",
+                symptoms
+            )
 
-            [
-                f"""
-                Title: {chunk.title}
+            span.add_event(
+                "RAG retrieval started"
+            )
 
-                Content: {chunk.content}
-                """
+            rag_chunks = retrieve_relevant_chunks(
+                db=db,
+                query=symptoms,
+                top_k=3
+            )
+            
+            rag_context = "\n\n".join(
 
-                for chunk in rag_chunks
-            ]
-        )
+                        [
+                            f"""
+                            Title: {chunk.title}
+
+                            Content: {chunk.content}
+                            """
+
+                            for chunk in rag_chunks
+                        ]
+                    )
+
+            span.set_attribute(
+                "rag.documents_found",
+                len(rag_chunks)
+            )
+
+            if len(rag_chunks) > 0:
+
+                span.set_attribute(
+                    "rag.top_document",
+                    rag_chunks[0].title
+                )
+
+                span.set_attribute(
+                    "rag.top_specialty",
+                    rag_chunks[0].medical_specialty
+                )
+
+            span.add_event(
+                "RAG retrieval completed"
+            )
+
 
         # STEP 3 — Parallel Agent Execution
 
@@ -143,29 +248,106 @@ class PatientIntakeOrchestrator:
             """
         )
 
-        triage_response, routing_response = (
-            await asyncio.gather(
-                triage_task,
-                routing_task
+        with tracer.start_as_current_span(
+            "triage_and_routing"
+        ) as span:
+
+            triage_response, routing_response = (
+                await asyncio.gather(
+                    triage_task,
+                    routing_task
+                )
             )
-        )
+            
+            # STEP 4 — Parse Agent Outputs
 
-        # STEP 4 — Parse Agent Outputs
+            triage_result = json.loads(
+                triage_response.content
+            )
 
-        triage_result = json.loads(
-            triage_response.content
-        )
+            routing_result = json.loads(
+                routing_response.content
+            )
+        
+            span.set_attribute(
+                "triage.urgency",
+                str(
+                    triage_result.get(
+                        "urgency_level",
+                        ""
+                    )
+                )
+            )
 
-        routing_result = json.loads(
-            routing_response.content
-        )
+            span.set_attribute(
+                "triage.confidence",
+                float(
+                    triage_result.get(
+                        "confidence_score",
+                        0
+                    )
+                )
+            )
+
+            span.set_attribute(
+                "routing.department",
+                str(
+                    routing_result.get(
+                        "suggested_department",
+                        ""
+                    )
+                )
+            )
+
+            span.add_event(
+                "AI triage completed"
+            )
+
+            span.add_event(
+                "Department routing completed"
+            )
 
         # STEP 5 — Safety Validation
 
-        safety_result = apply_triage_safety_rules(
-            symptoms,
-            triage_result["urgency_level"]
-        )
+        with tracer.start_as_current_span(
+            "safety_validation"
+        ) as span:
+
+            safety_result = apply_triage_safety_rules(
+                symptoms,
+                triage_result["urgency_level"]
+            )
+            
+            span.set_attribute(
+                "safety.override",
+                bool(
+                    safety_result[
+                        "override_applied"
+                    ]
+                )
+            )
+
+            span.set_attribute(
+                "safety.final_urgency",
+                str(
+                    safety_result[
+                        "urgency_level"
+                    ]
+                )
+            )
+
+            span.set_attribute(
+                "safety.reason",
+                str(
+                    safety_result[
+                        "reason"
+                    ]
+                )
+            )
+
+            span.add_event(
+                "Safety validation completed"
+            )
 
         triage_result["urgency_level"] = (
             safety_result["urgency_level"]
@@ -177,6 +359,15 @@ class PatientIntakeOrchestrator:
 
         triage_result["safety_reason"] = (
             safety_result["reason"]
+        )
+
+        department_name = routing_result.get(
+            "suggested_department"
+        )
+
+        department = get_department_by_name(
+            db,
+            department_name
         )
 
         # STEP 6 — Create Intake Record
@@ -192,7 +383,9 @@ class PatientIntakeOrchestrator:
             created_by_user_id=1,
 
             ai_extracted_summary=symptoms,
-
+            
+            suggested_department_id=department.department_id,
+            
             ai_urgency_level=triage_result.get(
                 "urgency_level"
             ),
@@ -201,7 +394,8 @@ class PatientIntakeOrchestrator:
                 "confidence_score"
             ),
 
-            status="AI Processed"
+            staff_verified=False,
+            status="Pending",
         )
 
         priority_mapping = {
@@ -219,140 +413,127 @@ class PatientIntakeOrchestrator:
             4
         )
 
-        saved_intake = create_patient_intake(
-            db,
-            intake_record
-        )
+        with tracer.start_as_current_span(
+            "save_intake"
+        ) as span:
+
+            span.set_attribute(
+                "urgency_level",
+                triage_result.get(
+                    "urgency_level"
+                )
+            )
+
+            saved_intake = create_patient_intake(
+                db,
+                intake_record
+            )
+            
+            span.set_attribute(
+                "intake.id",
+                saved_intake.intake_id
+            )
+
+            span.set_attribute(
+                "patient.id",
+                patient.patient_id
+            )
+
+            span.add_event(
+                "Patient intake saved"
+            )
+            
+        with tracer.start_as_current_span(
+            "retrieval_logging"
+        ) as span:
+            
+            for rank, chunk in enumerate(
+                rag_chunks,
+                start=1
+            ):
+
+                retrieval_log = RAGRetrievalLog(
+
+                    intake_id=saved_intake.intake_id,
+
+                    knowledge_id=chunk.knowledge_id,
+
+                    retrieval_rank=rank,
+
+                    similarity_score=None
+                )
+
+                db.add(retrieval_log)
+
+            db.commit()
+            
+            span.set_attribute(
+                "retrieval.count",
+                len(rag_chunks)
+            )
+            
+            for index, chunk in enumerate(rag_chunks):
+
+                span.set_attribute(
+                    f"retrieval.doc_{index+1}",
+                    chunk.title
+                )
+
+                span.set_attribute(
+                    f"retrieval.specialty_{index+1}",
+                    chunk.medical_specialty
+                )
+
+            span.set_attribute(
+                "intake.id",
+                saved_intake.intake_id
+            )
+
+            span.add_event(
+                "Retrieval logs saved"
+            )
         
-        for rank, chunk in enumerate(
-            rag_chunks,
-            start=1
+        
+        
+        
+        with tracer.start_as_current_span(
+            "ai_processing_logs"
         ):
-
-            retrieval_log = RAGRetrievalLog(
-
+            log_ai_processing(
+                db=db,
                 intake_id=saved_intake.intake_id,
-
-                knowledge_id=chunk.knowledge_id,
-
-                retrieval_rank=rank,
-
-                similarity_score=None
+                ai_model_name="Gemini",
+                processing_stage="Intake Agent",
+                input_data=patient_input,
+                output_data=json.dumps(intake_result)
             )
-
-            db.add(retrieval_log)
-
-        db.commit()
-        
-        log_activity(
-
-            db=db,
-
-            user_id=1,
-
-            activity_type="Patient Intake Created",
-
-            entity_name="Patient Intake",
-
-            entity_id=saved_intake.intake_id,
-
-            activity_description=
-            f"AI intake created for patient {patient.patient_id}"
-        )
-        
-        log_ai_processing(
-            db=db,
-            intake_id=saved_intake.intake_id,
-            ai_model_name="Gemini",
-            processing_stage="Intake Agent",
-            input_data=patient_input,
-            output_data=json.dumps(intake_result)
-        )
-        
-        log_ai_processing(
-            db=db,
-            intake_id=saved_intake.intake_id,
-            ai_model_name="Gemini",
-            processing_stage="Triage Agent",
-            input_data=symptoms,
-            output_data=json.dumps(triage_result),
-            confidence_score=triage_result.get(
-                "confidence_score"
+            
+            log_ai_processing(
+                db=db,
+                intake_id=saved_intake.intake_id,
+                ai_model_name="Gemini",
+                processing_stage="Triage Agent",
+                input_data=symptoms,
+                output_data=json.dumps(triage_result),
+                confidence_score=triage_result.get(
+                    "confidence_score"
+                )
             )
-        )
+            
+            log_ai_processing(
+                db=db,
+                intake_id=saved_intake.intake_id,
+                ai_model_name="Gemini",
+                processing_stage="Routing Agent",
+                input_data=symptoms,
+                output_data=json.dumps(routing_result)
+            )
+            
+
         
-        log_ai_processing(
-            db=db,
-            intake_id=saved_intake.intake_id,
-            ai_model_name="Gemini",
-            processing_stage="Routing Agent",
-            input_data=symptoms,
-            output_data=json.dumps(routing_result)
-        )
         
-        department_name = routing_result.get(
-            "suggested_department"
-        )
-
-        department = get_department_by_name(
-            db,
-            department_name
-        )
+            
         
-        assigned_doctor = assign_doctor(
-            db,
-            department.department_id
-        )
-
-        queue_number = get_next_queue_number(
-            db
-        )
-
-        queue_position = get_next_queue_position(
-            db,
-            department.department_id
-        )
-
-        queue_entry = QueueEntryCreate(
-
-            intake_id=saved_intake.intake_id,
-
-            queue_date=date.today(),
-
-            queue_number=queue_number,
-
-            priority_score=priority_score,
-
-            assigned_doctor_id=
-            assigned_doctor.doctor_id,
-
-            queue_position=queue_position,
-
-            queue_status="Waiting",
-
-            department_id=department.department_id
-        )
-
-        saved_queue = create_queue_entry_service(
-            db,
-            queue_entry
-        )
-        
-        log_activity(
-
-            db=db,
-
-            user_id=1,
-
-            activity_type="Queue Entry Created",
-
-            entity_name="Queue Entry",
-
-            entity_id=saved_queue.queue_id,
-
-            activity_description=
-            f"Patient assigned to doctor {assigned_doctor.doctor_id}"
-        )
         # STEP 7 — Queue Priority
 
 
@@ -370,7 +551,8 @@ class PatientIntakeOrchestrator:
                 }
                 for chunk in rag_chunks
             ],
-            "queue": {
-                "priority_score": priority_score
+            "verification_status": {
+                "staff_verified": False,
+                "status": "Pending"
             }
         }

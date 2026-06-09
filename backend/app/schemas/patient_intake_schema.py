@@ -170,3 +170,14 @@ class PatientIntakeResponse(
 
     class Config:
         from_attributes = True
+        
+        
+class IntakeVerificationRequest(BaseModel):
+
+    verified_by_user_id: int
+
+    final_urgency_level: str
+
+    department_name: str
+
+    staff_notes: Optional[str] = None

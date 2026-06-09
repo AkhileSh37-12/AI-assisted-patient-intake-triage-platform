@@ -5,16 +5,33 @@ from opentelemetry.sdk.trace import (
 )
 
 from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,
-    ConsoleSpanExporter
+    BatchSpanProcessor
+)
+
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter
+)
+
+from opentelemetry.sdk.resources import (
+    Resource
 )
 
 trace.set_tracer_provider(
-    TracerProvider()
+    TracerProvider(
+        resource=Resource.create(
+            {
+                "service.name":
+                "ai-triage-platform"
+            }
+        )
+    )
 )
 
 span_processor = BatchSpanProcessor(
-    ConsoleSpanExporter()
+    OTLPSpanExporter(
+        endpoint="host.docker.internal:4317",
+        insecure=True
+    )
 )
 
 trace.get_tracer_provider().add_span_processor(

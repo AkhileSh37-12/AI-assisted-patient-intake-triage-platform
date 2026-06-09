@@ -121,14 +121,22 @@ def get_next_queue_number(
 
 def get_next_queue_position(
     db: Session,
-    department_id: int
+    assigned_doctor_id: int
 ):
 
     waiting_count = (
         db.query(QueueEntry)
         .filter(
-            QueueEntry.department_id == department_id,
-            QueueEntry.queue_status == "Waiting"
+            QueueEntry.assigned_doctor_id ==
+            assigned_doctor_id,
+
+            QueueEntry.queue_status.in_(
+                [
+                    "Waiting",
+                    "Called",
+                    "In Consultation"
+                ]
+            )
         )
         .count()
     )
