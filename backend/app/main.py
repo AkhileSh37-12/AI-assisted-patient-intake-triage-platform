@@ -27,10 +27,16 @@ from app.models.rag_retrieval_log import RAGRetrievalLog
 from app.routes.rag_retrieval_log_routes import router as rag_retrieval_log_router
 from app.routes.intake_ai_routes import router as intake_ai_router
 from app.routes.rag_test_route import router as rag_test_router
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
+from app.telemetry.tracing import tracer
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+FastAPIInstrumentor.instrument_app(
+    app
+)
 
 app.include_router(patient_router)
 app.include_router(department_router)
