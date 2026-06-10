@@ -40,9 +40,13 @@ def get_all_patient_intakes(
     db: Session
 ):
 
-    return db.query(
-        PatientIntake
-    ).all()
+    return (
+        db.query(PatientIntake)
+        .order_by(
+            PatientIntake.intake_id.desc()
+        )
+        .all()
+    )
 
 
 def get_patient_intake_by_id(

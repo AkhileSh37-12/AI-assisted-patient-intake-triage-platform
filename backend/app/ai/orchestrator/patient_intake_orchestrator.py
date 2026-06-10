@@ -67,7 +67,10 @@ from app.models.rag_retrieval_log import (
     RAGRetrievalLog
 )
 
-from app.telemetry.tracing import tracer
+from app.telemetry.tracing import (
+    tracer,
+    logger
+)
 
 from app.models.user import User
  
@@ -88,10 +91,18 @@ class PatientIntakeOrchestrator:
             span.add_event(
                 "Patient intake started"
             )
+            
+            logger.info(
+                "AI Intake Agent started"
+            )
 
             intake_response = await asyncio.to_thread(
                 intake_agent.run,
                 patient_input
+            )
+            
+            logger.info(
+                "Intake agent response received"
             )
 
             intake_result = json.loads(
@@ -141,6 +152,10 @@ class PatientIntakeOrchestrator:
             span.add_event(
                 "Patient intake completed"
             )
+            
+            logger.info(
+                f"Patient extracted: {intake_result.get('full_name')}"
+            )
 
         # STEP 2 — Create Patient
 
@@ -166,6 +181,10 @@ class PatientIntakeOrchestrator:
             span.add_event(
                 "Patient record created"
             )
+            
+            logger.info(
+                f"Patient record created: patient_id={patient.patient_id}"
+            )
 
         
         with tracer.start_as_current_span(
@@ -179,6 +198,10 @@ class PatientIntakeOrchestrator:
 
             span.add_event(
                 "RAG retrieval started"
+            )
+            
+            logger.info(
+                f"RAG retrieval started for symptoms={symptoms}"
             )
 
             rag_chunks = retrieve_relevant_chunks(
@@ -216,10 +239,24 @@ class PatientIntakeOrchestrator:
                     "rag.top_specialty",
                     rag_chunks[0].medical_specialty
                 )
+                
+                logger.info(
+                    f"Top RAG document: {rag_chunks[0].title}"
+                )
 
             span.add_event(
                 "RAG retrieval completed"
             )
+            
+            logger.info(
+                f"RAG retrieved {len(rag_chunks)} documents"
+            )
+            
+            for chunk in rag_chunks:
+
+                logger.info(
+                    f"RAG Match: {chunk.title}"
+                )
 
 
         # STEP 3 — Parallel Agent Execution
@@ -302,9 +339,17 @@ class PatientIntakeOrchestrator:
             span.add_event(
                 "AI triage completed"
             )
+            
+            logger.info(
+                f"Triage completed: urgency={triage_result.get('urgency_level')}"
+            )
 
             span.add_event(
                 "Department routing completed"
+            )
+            
+            logger.info(
+                f"Department routed: {routing_result.get('suggested_department')}"
             )
 
         # STEP 5 — Safety Validation
@@ -347,6 +392,12 @@ class PatientIntakeOrchestrator:
 
             span.add_event(
                 "Safety validation completed"
+            )
+            
+            logger.info(
+                f"Safety validation completed: "
+                f"override={safety_result['override_applied']}, "
+                f"final_urgency={safety_result['urgency_level']}"
             )
 
         triage_result["urgency_level"] = (
@@ -430,6 +481,15 @@ class PatientIntakeOrchestrator:
             )
             
             span.set_attribute(
+                "workflow.id",
+                f"intake_{saved_intake.intake_id}"
+            )
+            
+            workflow_intake_id = (
+                saved_intake.intake_id
+            )
+            
+            span.set_attribute(
                 "intake.id",
                 saved_intake.intake_id
             )
@@ -438,9 +498,13 @@ class PatientIntakeOrchestrator:
                 "patient.id",
                 patient.patient_id
             )
-
+            
             span.add_event(
                 "Patient intake saved"
+            )
+            
+            logger.info(
+                f"Intake saved: intake_id={saved_intake.intake_id}"
             )
             
         with tracer.start_as_current_span(
@@ -466,6 +530,10 @@ class PatientIntakeOrchestrator:
                 db.add(retrieval_log)
 
             db.commit()
+            span.set_attribute(
+                "workflow.id",
+                f"intake_{saved_intake.intake_id}"
+            )
             
             span.set_attribute(
                 "retrieval.count",
@@ -492,13 +560,30 @@ class PatientIntakeOrchestrator:
             span.add_event(
                 "Retrieval logs saved"
             )
-        
-        
+            
+            logger.info(
+                f"RAG retrieval logs saved for intake={saved_intake.intake_id}"
+            )
         
         
         with tracer.start_as_current_span(
             "ai_processing_logs"
-        ):
+        ) as span:
+
+            span.set_attribute(
+                "intake.id",
+                workflow_intake_id
+            )
+
+            span.set_attribute(
+                "patient.id",
+                patient.patient_id
+            )
+            span.set_attribute(
+                "workflow.id",
+                f"intake_{saved_intake.intake_id}"
+            )
+            
             log_ai_processing(
                 db=db,
                 intake_id=saved_intake.intake_id,
@@ -529,11 +614,10 @@ class PatientIntakeOrchestrator:
                 output_data=json.dumps(routing_result)
             )
             
-
-        
-        
+            logger.info(
+                f"AI processing logs saved for intake={saved_intake.intake_id}"
+            )
             
-        
         # STEP 7 — Queue Priority
 
 

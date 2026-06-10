@@ -86,3 +86,25 @@ def delete_doctor(
     return {
         "message": "Doctor deleted successfully"
     }
+    
+def get_doctor_by_id(
+    db: Session,
+    doctor_id: int
+):
+
+    doctor = (
+        db.query(Doctor)
+        .filter(
+            Doctor.doctor_id == doctor_id
+        )
+        .first()
+    )
+
+    if not doctor:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Doctor not found"
+        )
+
+    return doctor

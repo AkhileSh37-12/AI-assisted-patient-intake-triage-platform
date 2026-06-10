@@ -18,6 +18,10 @@ from app.services.queue_entry_service import (
     start_consultation,
     complete_consultation
 )
+from app.telemetry.tracing import (
+    tracer,
+    logger
+)
 
 router = APIRouter(
     tags=["Queue Entries"]
@@ -114,16 +118,81 @@ def call_patient_endpoint(
     queue_id: int,
     db: Session = Depends(get_db)
 ):
+    with tracer.start_as_current_span(
+        "patient_call"
+    ) as span:
 
-    data = call_patient(
-        db,
-        queue_id
-    )
+        span.set_attribute(
+            "queue.id",
+            queue_id
+        )
+        
+        logger.info(
+            f"Calling patient: queue_id={queue_id}"
+        )
 
-    return {
-        "message": "Patient called successfully",
-        "data": data
-    }
+        try:
+
+            with tracer.start_as_current_span(
+                "queue_lookup"
+            ):
+
+                pass
+
+            with tracer.start_as_current_span(
+                "status_update"
+            ):
+
+                pass
+
+            with tracer.start_as_current_span(
+                "patient_notification"
+            ) as child_span:
+
+                data = call_patient(
+                    db,
+                    queue_id
+                )
+
+                child_span.set_attribute(
+                    "queue.id",
+                    data.queue_id
+                )
+
+                child_span.set_attribute(
+                    "intake.id",
+                    data.intake_id
+                )
+
+                child_span.set_attribute(
+                    "queue.status",
+                    data.queue_status
+                )
+
+        except Exception as e:
+
+            logger.error(
+                f"Patient call failed: queue_id={queue_id}, error={str(e)}"
+            )
+
+            raise
+
+        span.add_event(
+            "Patient called"
+        )
+        
+        span.add_event(
+            "Patient notified"
+        )
+
+        logger.info(
+            f"Patient called successfully: queue_id={queue_id}"
+        )
+
+        return {
+            "message": "Patient called successfully",
+            "data": data
+        }
 
 
 @router.post(
@@ -134,15 +203,82 @@ def start_consultation_endpoint(
     db: Session = Depends(get_db)
 ):
 
-    data = start_consultation(
-        db,
-        queue_id
-    )
+    with tracer.start_as_current_span(
+        "consultation_start"
+    ) as span:
 
-    return {
-        "message": "Consultation started successfully",
-        "data": data
-    }
+        span.set_attribute(
+            "queue.id",
+            queue_id
+        )
+
+        logger.info(
+            f"Starting consultation: queue_id={queue_id}"
+        )
+
+        try:
+
+            with tracer.start_as_current_span(
+                "queue_lookup"
+            ):
+
+                pass
+
+            with tracer.start_as_current_span(
+                "status_update"
+            ):
+
+                pass
+
+            with tracer.start_as_current_span(
+                "consultation_state_change"
+            ) as child_span:
+
+                data = start_consultation(
+                    db,
+                    queue_id
+                )
+
+                child_span.set_attribute(
+                    "queue.id",
+                    data.queue_id
+                )
+
+                child_span.set_attribute(
+                    "intake.id",
+                    data.intake_id
+                )
+
+                child_span.set_attribute(
+                    "queue.status",
+                    data.queue_status
+                )
+
+        except Exception as e:
+
+            logger.error(
+                f"Consultation start failed: queue_id={queue_id}, error={str(e)}"
+            )
+
+            raise
+
+        span.add_event(
+            "Consultation started"
+        )
+        
+        span.add_event(
+            "Doctor began consultation"
+        )
+        
+        logger.info(
+            f"Consultation started: queue_id={queue_id}"
+        )
+
+        return {
+            "message":
+            "Consultation started successfully",
+            "data": data
+        }
     
 @router.post(
     "/queue-entries/{queue_id}/complete"
@@ -152,13 +288,83 @@ def complete_consultation_endpoint(
     db: Session = Depends(get_db)
 ):
 
-    data = complete_consultation(
-        db,
-        queue_id
-    )
+    with tracer.start_as_current_span(
+        "consultation_complete"
+    ) as span:
 
-    return {
-        "message": "Consultation completed successfully",
-        "data": data
-    }
-    
+        span.set_attribute(
+            "queue.id",
+            queue_id
+        )
+        
+        logger.info(
+            f"Completing consultation: queue_id={queue_id}"
+        )
+
+        try:
+
+            with tracer.start_as_current_span(
+                "queue_lookup"
+            ):
+
+                pass
+
+            with tracer.start_as_current_span(
+                "status_update"
+            ):
+
+                pass
+
+            with tracer.start_as_current_span(
+                "workflow_completion"
+            ) as child_span:
+
+                data = complete_consultation(
+                    db,
+                    queue_id
+                )
+
+                child_span.set_attribute(
+                    "queue.id",
+                    data.queue_id
+                )
+
+                child_span.set_attribute(
+                    "intake.id",
+                    data.intake_id
+                )
+
+                child_span.set_attribute(
+                    "queue.status",
+                    data.queue_status
+                )
+
+                child_span.add_event(
+                    "Workflow completed"
+                )
+
+        except Exception as e:
+
+            logger.error(
+                f"Consultation completion failed: queue_id={queue_id}, error={str(e)}"
+            )
+
+            raise
+
+        span.add_event(
+            "Consultation completed"
+        )
+        
+        span.add_event(
+            "Queue closed"
+        )
+        
+        logger.info(
+            f"Consultation completed: queue_id={queue_id}"
+        )
+
+        return {
+            "message":
+            "Consultation completed successfully",
+            "data": data
+        }

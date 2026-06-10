@@ -179,5 +179,7 @@ class IntakeVerificationRequest(BaseModel):
     final_urgency_level: str
 
     department_name: str
+    
+    assigned_doctor_id: Optional[int] = None
 
     staff_notes: Optional[str] = None

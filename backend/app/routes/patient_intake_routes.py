@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -5,6 +7,8 @@ from fastapi import (
 )
 
 from sqlalchemy.orm import Session
+
+from app.telemetry.tracing import logger
 
 from app.db.database import get_db
 
@@ -39,6 +43,12 @@ from app.schemas.queue_entry_schema import (
     QueueEntryCreate
 )
 from datetime import date
+
+from app.services.doctor_service import (
+    get_doctor_by_id
+)
+
+from app.telemetry.tracing import tracer
 
 router = APIRouter(
     prefix="/patient-intakes",
@@ -160,101 +170,280 @@ def verify_intake(
     db: Session = Depends(get_db)
 ):
 
-    department = get_department_by_name(
-        db,
-        request.department_name
-    )
+    with tracer.start_as_current_span(
+        "staff_verification"
+    ) as span:
 
-    verified_intake = verify_patient_intake(
-        db=db,
-        intake_id=intake_id,
-        verified_by_user_id=
-        request.verified_by_user_id,
-        final_urgency_level=
-        request.final_urgency_level,
-        final_department_id=
-        department.department_id,
-        staff_notes=
-        request.staff_notes
-    )
-    
-    if not verified_intake:
-    
-            raise HTTPException(
-                status_code=404,
-                detail="Patient intake not found"
+        span.set_attribute(
+            "intake.id",
+            intake_id
+        )
+
+        span.set_attribute(
+            "workflow.id",
+            f"intake_{intake_id}"
+        )
+
+        span.set_attribute(
+            "verified.by",
+            request.verified_by_user_id
+        )
+
+        span.add_event(
+            "Verification workflow started"
+        )
+
+        logger.info(
+            f"Verification started for intake={intake_id}"
+        )
+
+        department = get_department_by_name(
+            db,
+            request.department_name
+        )
+
+        # ----------------------------------
+        # Intake Verification
+        # ----------------------------------
+
+        with tracer.start_as_current_span(
+            "intake_verification"
+        ) as child_span:
+
+            child_span.set_attribute(
+                "workflow.id",
+                f"intake_{intake_id}"
             )
 
-    priority_map = {
-        "Emergency": 1,
-        "High": 2,
-        "Medium": 3,
-        "Low": 4
-    }
+            child_span.set_attribute(
+                "department.name",
+                request.department_name
+            )
 
-    priority_score = priority_map.get(
-        verified_intake.final_urgency_level,
-        4
-    )
+            child_span.set_attribute(
+                "urgency.level",
+                request.final_urgency_level
+            )
 
-    assigned_doctor = assign_doctor(
-        db,
-        department.department_id
-    )
+            verified_intake = verify_patient_intake(
+                db=db,
+                intake_id=intake_id,
+                verified_by_user_id=
+                request.verified_by_user_id,
+                final_urgency_level=
+                request.final_urgency_level,
+                final_department_id=
+                department.department_id,
+                staff_notes=
+                request.staff_notes
+            )
 
-    queue_number = get_next_queue_number(
-        db
-    )
+            if not verified_intake:
 
-    queue_position = get_next_queue_position(
-        db,
-        assigned_doctor.doctor_id
-    )
+                raise HTTPException(
+                    status_code=404,
+                    detail="Patient intake not found"
+                )
 
-    queue_entry = QueueEntryCreate(
+            child_span.set_attribute(
+                "patient.id",
+                verified_intake.patient_id
+            )
 
-        intake_id=
-        verified_intake.intake_id,
+            child_span.add_event(
+                "Patient intake verified"
+            )
+            
+            logger.info(
+                f"Intake verified: intake_id={verified_intake.intake_id}"
+            )
 
-        queue_date=
-        date.today(),
+        priority_map = {
+            "Emergency": 1,
+            "High": 2,
+            "Medium": 3,
+            "Low": 4
+        }
 
-        queue_number=
-        queue_number,
+        priority_score = priority_map.get(
+            verified_intake.final_urgency_level,
+            4
+        )
 
-        priority_score=
-        priority_score,
+        # ----------------------------------
+        # Doctor Assignment
+        # ----------------------------------
 
-        assigned_doctor_id=
-        assigned_doctor.doctor_id,
+        with tracer.start_as_current_span(
+            "doctor_assignment"
+        ) as child_span:
 
-        queue_position=
-        queue_position,
+            child_span.set_attribute(
+                "workflow.id",
+                f"intake_{intake_id}"
+            )
 
-        queue_status="Waiting",
+            if request.assigned_doctor_id:
 
-        department_id=
-        department.department_id
-    )
+                assigned_doctor = get_doctor_by_id(
+                    db,
+                    request.assigned_doctor_id
+                )
 
-    saved_queue = create_queue_entry_service(
-        db,
-        queue_entry
-    )
+            else:
 
-    verified_intake.assigned_doctor_id = (
-        assigned_doctor.doctor_id
-    )
+                assigned_doctor = assign_doctor(
+                    db,
+                    department.department_id
+                )
 
-    verified_intake.status = (
-        "Queued"
-    )
+            if (
+                assigned_doctor.department_id
+                != department.department_id
+            ):
 
-    db.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail=
+                    "Doctor does not belong to selected department"
+                )
+                
+                logger.error(
+                    f"Doctor department mismatch for intake={intake_id}"
+                )
 
-    db.refresh(
-        verified_intake
-    )
+            child_span.set_attribute(
+                "doctor.id",
+                assigned_doctor.doctor_id
+            )
+
+            child_span.set_attribute(
+                "department.id",
+                department.department_id
+            )
+
+            child_span.add_event(
+                "Doctor assigned"
+            )
+            
+            logger.info(
+                f"Doctor assigned: doctor_id={assigned_doctor.doctor_id}, department={department.department_name}"
+            )
+
+        # ----------------------------------
+        # Queue Creation
+        # ----------------------------------
+
+        with tracer.start_as_current_span(
+            "queue_creation"
+        ) as child_span:
+
+            child_span.set_attribute(
+                "workflow.id",
+                f"intake_{intake_id}"
+            )
+
+            queue_number = get_next_queue_number(
+                db
+            )
+
+            queue_position = get_next_queue_position(
+                db,
+                assigned_doctor.doctor_id
+            )
+
+            queue_entry = QueueEntryCreate(
+
+                intake_id=
+                verified_intake.intake_id,
+
+                queue_date=
+                date.today(),
+
+                queue_number=
+                queue_number,
+
+                priority_score=
+                priority_score,
+
+                assigned_doctor_id=
+                assigned_doctor.doctor_id,
+
+                queue_position=
+                queue_position,
+
+                queue_status="Waiting",
+
+                department_id=
+                department.department_id
+            )
+
+            saved_queue = create_queue_entry_service(
+                db,
+                queue_entry
+            )
+
+            child_span.set_attribute(
+                "queue.id",
+                saved_queue.queue_id
+            )
+
+            child_span.set_attribute(
+                "queue.number",
+                saved_queue.queue_number
+            )
+
+            child_span.set_attribute(
+                "queue.position",
+                saved_queue.queue_position
+            )
+
+            child_span.add_event(
+                "Queue created"
+            )
+            
+            logger.info(
+                f"Queue created: queue_id={saved_queue.queue_id}"
+            )
+
+        # ----------------------------------
+        # Intake Update
+        # ----------------------------------
+
+        with tracer.start_as_current_span(
+            "intake_update"
+        ) as child_span:
+
+            child_span.set_attribute(
+                "workflow.id",
+                f"intake_{intake_id}"
+            )
+
+            verified_intake.assigned_doctor_id = (
+                assigned_doctor.doctor_id
+            )
+
+            verified_intake.status = (
+                "Queued"
+            )
+
+            db.commit()
+
+            db.refresh(
+                verified_intake
+            )
+
+            child_span.add_event(
+                "Intake updated"
+            )
+            
+            logger.info(
+                f"Verification completed for intake={intake_id}"
+            )
+
+        span.add_event(
+            "Verification workflow completed"
+        )
 
     return {
 
